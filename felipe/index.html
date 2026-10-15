@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Painel - Serviço de Quarto</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      background: #121212;
+      color: #fff;
+      text-align: center;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 1rem;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      background: #3498db;
+      color: white;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #2980b9;
+    }
+
+    .card-container {
+      margin-top: 30px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .card {
+      width: 320px;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      background-color: #2a2a2a; /* Padrão / Neutro */
+      transition: background-color 0.5s ease;
+    }
+
+    .card.solicitado {
+      background-color: #27ae60; /* Verde */
+    }
+
+    .card.cancelado {
+      background-color: #c0392b; /* Vermelho */
+    }
+
+    .card.limpo {
+      background-color: #2980b9; /* Azul */
+    }
+
+    .quarto-numero {
+      font-size: 3rem;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+
+    .status-texto {
+      font-size: 1.2rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Painel de Gerenciamento do Hotel</h1>
+  <button id="btnConectar">Conectar Arduino</button>
+
+  <div class="card-container">
+    <div id="cardQuarto" class="card">
+      <div>QUARTO</div>
+      <div id="numQuarto" class="quarto-numero">--</div>
+      <div id="statusQuarto" class="status-texto">Aguardando Conexão...</div>
+    </div>
+  </div>
+
+  <script>
+    let port;
+    let reader;
+
+    document.getElementById('btnConectar').addEventListener('click', async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+
+        const textDecoder = new TextDecoderStream();
+        port.readable.pipeTo(textDecoder.writable);
+        reader = textDecoder.readable.getReader();
+
+        document.getElementById('statusQuarto').innerText = "Aguardando leitura de cartão...";
+
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            reader.releaseLock();
+            break;
+          }
+          if (value) {
+            buffer += value;
+
+            let linhas = buffer.split("\n");
+            buffer = linhas.pop();
+
+            for (let linha of linhas) {
+              let dadoLimpo = linha.trim();
+              
+              if (dadoLimpo.includes(":")) {
+                let partes = dadoLimpo.split(":");
+                let prefixo = partes[0].trim();
+                let status = partes[1].trim();
+
+                atualizarPainel(prefixo, status);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Erro na comunicação serial:", error);
+        document.getElementById('statusQuarto').innerText = "Erro ao conectar!";
+      }
+    });
+
+    function atualizarPainel(prefixo, status) {
+      const card = document.getElementById('cardQuarto');
+      const numQuartoEl = document.getElementById('numQuarto');
+      const statusQuartoEl = document.getElementById('statusQuarto');
+
+      card.className = "card";
+
+      // 1. Cartão da Camareira (67) -> Apenas finaliza a limpeza do quarto atual
+      if (prefixo === "67") {
+        card.classList.add("limpo");
+        statusQuartoEl.innerText = "Quarto Limpo / Finalizado pela Camareira";
+      } 
+      // 2. Cartão de Hóspede (Ex: 93) -> Define o número do Quarto e o Status
+      else {
+        numQuartoEl.innerText = prefixo; // Atualiza o número do quarto com o ID do hóspede
+
+        if (status === "1") {
+          card.classList.add("solicitado");
+          statusQuartoEl.innerText = "Serviço Solicitado pelo Hóspede";
+        } else {
+          card.classList.add("cancelado");
+          statusQuartoEl.innerText = "Serviço Cancelado pelo Hóspede";
+        }
+      }
+    }
+  </script>
+</body>
+</html>
